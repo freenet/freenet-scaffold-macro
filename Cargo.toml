@@ -1,7 +1,11 @@
 [package]
 name = "freenet-scaffold-macro"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+license = "LGPL-2.1-only"
+description = "A macro to support the creation of Freenet contracts"
+repository = "https://github.com/freenet/freenet-scaffold-macro"
+homepage = "https://freenet.org/"
 
 [lib]
 proc-macro = true
