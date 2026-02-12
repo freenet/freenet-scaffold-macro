@@ -2,10 +2,39 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::punctuated::Punctuated;
+use syn::{parse_macro_input, Data, DeriveInput, Fields, Meta, Token};
+
+/// Parse the `post_apply_delta = "method_name"` from attribute arguments.
+fn parse_post_apply_delta(attr: TokenStream) -> Option<syn::Ident> {
+    if attr.is_empty() {
+        return None;
+    }
+    let parsed = syn::parse::Parser::parse(Punctuated::<Meta, Token![,]>::parse_terminated, attr)
+        .expect("Failed to parse #[composable] attributes");
+
+    for meta in parsed {
+        if let Meta::NameValue(nv) = meta {
+            if nv.path.is_ident("post_apply_delta") {
+                if let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) = &nv.value
+                {
+                    return Some(format_ident!("{}", s.value()));
+                } else {
+                    panic!("post_apply_delta value must be a string literal");
+                }
+            }
+        }
+    }
+    None
+}
 
 #[proc_macro_attribute]
-pub fn composable(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn composable(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let post_apply_delta_method = parse_post_apply_delta(attr);
+
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
 
@@ -108,6 +137,13 @@ pub fn composable(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     });
 
+    // Generate post_apply_delta call if the attribute specifies a method
+    let post_apply_delta_call = if let Some(method) = &post_apply_delta_method {
+        quote! { self.#method(parameters)?; }
+    } else {
+        quote! {}
+    };
+
     let _generic_params: Vec<_> = input.generics.params.iter().collect();
     let where_clause = input.generics.where_clause.clone();
     let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
@@ -164,6 +200,7 @@ pub fn composable(_attr: TokenStream, item: TokenStream) -> TokenStream {
             fn apply_delta(&mut self, _parent_state: &Self::ParentState, parameters: &Self::Parameters, delta: &Option<Self::Delta>) -> Result<(), String> {
                 if let Some(delta) = delta {
                     #(#apply_delta_impl)*
+                    #post_apply_delta_call
                 }
                 Ok(())
             }
